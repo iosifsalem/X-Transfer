@@ -1,5 +1,6 @@
 # implementation of xTransfer, crossPCN protocol
 
+import numpy as np
 import networkx as nx
 import random
 
@@ -8,6 +9,16 @@ class Txn:
         self.src = src
         self.dst = dst
         self.amount = amount
+
+def hub_name(pcn_id):
+    return f'hub{pcn_id}'
+
+def client_name(pcn_id, client_id):
+    return f'pcn{pcn_id}client{client_id}'
+
+# TODO: fix capacity assignment
+def client_capacity_gen():
+    return 10
         
 def createPCNsTxns(inpt):
     nPCNs, nClientsPerPCN, txn_percentage = inpt
@@ -17,30 +28,34 @@ def createPCNsTxns(inpt):
     
     # we assume that all hubs can communicate with all other hubs
     # we will add the hub to hub links later, when we compute which ones are used
-    G.add_nodes_from([f'hub{i}' for i in range(nPCNs)], label='hub')
+    G.add_nodes_from([hub_name(i) for i in range(nPCNs)], label='hub')
     
-    # TODO: fix capacity assignment
-    for pcn in range(nPCNs):
-        G.add_nodes_from([f'pcn{pcn}client{i}' for i in range(nClientsPerPCN)], label='client')
-        G.add_edges_from([(f'hub{pcn}', f'pcn{pcn}client{i}') for i in range(nClientsPerPCN)], capacity=10)
-        G.add_edges_from([(f'pcn{pcn}client{i}', f'hub{pcn}') for i in range(nClientsPerPCN)], capacity=10)
+    for pcn_id in range(nPCNs):
+        G.add_nodes_from([client_name(pcn_id,i) for i in range(nClientsPerPCN)], label='client')
+        hub = hub_name(pcn_id)
+        G.add_edges_from([(hub, client_name(pcn_id, i)) for i in range(nClientsPerPCN)], capacity=client_capacity_gen())
+        G.add_edges_from([(client_name(pcn_id, i), hub) for i in range(nClientsPerPCN)], capacity=client_capacity_gen())
 
     # create transactions
-    clients = [x for x in G.nodes if G.nodes[x]['label']=='client']
+    clients = [x for x in G.nodes if G.nodes[x]['label'] == 'client']
     
     txns = []
-    for pcn in range(nPCNs):
-        for client in range(nClientsPerPCN):
+    for pcn_id in range(nPCNs):
+        hub = hub_name(pcn_id)
+        for client_id in range(nClientsPerPCN):
+            client = client_name(pcn_id, client_id)
+            
             # create random set of transactions summing up to capacity*txn_percentage
-            amount_left = G.edges[(f'pcn{pcn}client{client}', f'hub{pcn}')]['capacity']
+            amount_left = np.floor(txn_percentage * G.edges[(client, hub)]['capacity'])
             while amount_left != 0:
                 # select recepient
-                recepients = list(clients).delete(client)
+                dst = random.choice([node for node in clients if node != client])
                 
                 # select amount
-                txn_amount = random.randint()
-                txns.append(())
-            
+                txn_amount = random.randint(1,amount_left)
+                amount_left -= txn_amount
+                txns.append(Txn(client, dst, txn_amount))           
+    
     return G, txns
 
 def ILP():
@@ -54,7 +69,7 @@ def xtransfer(inpt):
     nPCNs, nClientsPerPCN, txn_percentage = inpt
     
     # create PCNs using input parameters
-    pcns, txns = createPCNsTxns(inpt)
+    G, txns = createPCNsTxns(inpt)
     
     #succesfull_txns = ILP(pcns, txns)
     
