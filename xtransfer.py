@@ -45,6 +45,10 @@ def createPCNsTxns(inpt):
     clients = [x for x in G.nodes if G.nodes[x]['label'] == 'client']
     
     txns = []
+    
+    # unit test
+    # txns = [Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity']*0.6), Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity']*0.5)]    
+    
     for pcn_id in range(nPCNs):
         hub = hub_name(pcn_id)
         for client_id in range(nClientsPerPCN):
@@ -93,6 +97,7 @@ def ILP(G, txns):
         clients = [node for node in G.nodes if G.nodes[node]['label']=='client']
         val, row, col, b = [], [], [], []
 
+        # optimization: the following for loops can be parallelized if needed
         for client in clients:
             hub = hub_attached_to_client(client)
             client_index = clients.index(client)
@@ -107,10 +112,14 @@ def ILP(G, txns):
                 col.append(txns.index(txn))            
             
             b.append(G.edges[(client, hub)]['capacity'])
-            
-        for lst in [val, row, col, b]:
-            lst = np.array(lst)
-        
+
+        # convert lists to np.array
+        val = np.array(val)
+        row = np.array(row)
+        col = np.array(col)
+        b = np.array(b)        
+
+        # define A as a sparse matrix
         A = sp.csr_matrix((val, (row, col)), shape=(len(clients), len(txns)))
         
         # Add constraints
@@ -160,7 +169,7 @@ def graph3():
     x = 1
 
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
-inputs = [(2,2,1)]
+inputs = [(2,2,2)]
 
 for tpl in inputs:
     txns = xtransfer(tpl)
