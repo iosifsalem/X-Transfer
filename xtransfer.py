@@ -47,7 +47,7 @@ def createPCNsTxns(inpt):
     txns = []
     
     # unit test
-    # txns = [Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity']*0.6), Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity']*0.5)]    
+    # txns = [Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity']*0.5), Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity'])]    
     
     for pcn_id in range(nPCNs):
         hub = hub_name(pcn_id)
@@ -137,11 +137,15 @@ def ILP(G, txns):
     except AttributeError:
         print("Encountered an attribute error")
     
-    successful_txns = txns
-    return successful_txns
+    successful_txns = [txn for txn in txns if x.X[txns.index(txn)]]
+    print(f'number of txns = {len(txns)}. successful txns = {len(successful_txns)}')
+
+    success_volume = sum([txn.amount for txn in txns if x.X[txns.index(txn)]]) / sum([txn.amount for txn in txns])
+    print(f'success volume = {success_volume}')
+    return successful_txns, success_volume
     
-def greedy():
-    x=1
+def greedy_hub_flows():
+    return 0
 
 def xtransfer(inpt):
     # X-Transfer computational part
@@ -150,14 +154,16 @@ def xtransfer(inpt):
     # create PCNs using input parameters
     G, txns = createPCNsTxns(inpt)
     
-    succesfull_txns = ILP(G, txns)
+    succesfull_txns, success_volume = ILP(G, txns)
     
-    #flows = greedy_flows(pcns, successfull_txns)
+    flows = greedy_hub_flows(G, successfull_txns)
     # alg from Patcas paper might be faster (check!)
+    
+    # add used links on graph (?)
     
     #write output 
     
-    return txns
+    return succesfull_txns, success_volume
     
 def graph1():
     x = 1
@@ -172,8 +178,13 @@ def graph3():
 inputs = [(2,2,2)]
 
 for tpl in inputs:
-    txns = xtransfer(tpl)
+    succesfull_txns, success_volume = xtransfer(tpl)
     
+# runtime
 graph1()
+
+# volume
 graph2()
+
+# sum of flows through hubs
 graph3()
