@@ -6,6 +6,9 @@ import random
 import gurobipy as gp
 from gurobipy import GRB
 import scipy.sparse as sp
+import bisect 
+import time
+import matplotlib.pyplot as plt
 
 class Txn:
     def __init__(self, src, dst, amount):
@@ -82,19 +85,20 @@ def ILP(G, txns):
         # Create a new model
         m = gp.Model("transaction-selection")
     
-        # Create variables
+        # Create variables: binary for including a transaction or not
         x = m.addMVar(shape=len(txns), vtype=GRB.BINARY, name="x")
     
-        # Set objective
+        # Set objective: maximize volume of successful transactions 
         obj = np.array([txn.amount for txn in txns])
         m.setObjective(obj @ x, GRB.MAXIMIZE)
     
         # Build (sparse) constraint and bound matrix
         # use matrix form: A*x <= b
-        # val = np.array([1.0, 2.0, 3.0, -1.0, -1.0])
-        # row = np.array([0, 0, 0, 1, 1])
-        # col = np.array([0, 1, 2, 0, 1])
+        # i.e., each row A[i][*] of A multiplied by x is exactly the constraint A[i][*] * x <= b[i] 
         clients = [node for node in G.nodes if G.nodes[node]['label']=='client']
+        
+        # val[i] is the value of A in position (row[i], col[i])
+        # the bound for row of A (i-th constraint) i is b[i] 
         val, row, col, b = [], [], [], []
 
         # optimization: the following for loops can be parallelized if needed
@@ -144,7 +148,56 @@ def ILP(G, txns):
     print(f'success volume = {success_volume}')
     return successful_txns, success_volume
     
-def greedy_hub_flows():
+def greedy_hub_flows(G, successful_txns):
+    # computes flows among hubs that realize the successful transactions
+    
+    # compute in/out-flows
+    hubs = [node for node in G.nodes if G.nodes[node]['label'] == 'hub']
+    clients = [node for node in G.nodes if G.nodes[node]['label'] == 'client']
+    
+    flows = {node:0 for node in G.nodes if G.nodes[node]['label'] == 'hub'}
+    
+    for txn in successful_txns:
+        sending_hub = hub_attached_to_client(txn.src)
+        receiving_hub = hub_attached_to_client(txn.dst)
+        flows[sending_hub] += txn.amount
+        flows[receiving_hub] -= txn.amount
+
+    print(flows)
+    
+    # sort flows
+    hubs_with_outflow = []
+    hubs_with_inflow = []
+    for hub in flows:
+        if flows[hub] >= 0:
+            hubs_with_outflow.append([hub, flows[hub]])
+        else:
+            hubs_with_inflow.append([hub, flows[hub]])            
+    
+    # last element is the largest in absolute value 
+    hubs_with_inflow.sort(key=lambda x: x[1], reverse=True)
+    hubs_with_outflow.sort(key=lambda x: x[1])
+    
+    # print(hubs_with_inflow)
+    # print(hubs_with_outflow)
+    
+    # satisfy demands (add remainder to sorted list)
+    while hubs_with_inflow:
+        (rcv_hub, demand) = hubs_with_inflow.pop()
+        demand = abs(demand)
+        
+        while demand:
+            (send_hub, supply) = hubs_with_inflow.pop()
+            if supply >= demand:
+                demand = 0
+                supply -= demand
+                bisect.insort(hubs_with_outflow, [hub, supply], key=lambda x: x[1]) # fix
+                
+            else:
+                 demand -= supply   
+                 (send_hub, supply) = hubs_with_inflow.pop()
+
+
     return 0
 
 def xtransfer(inpt):
@@ -154,19 +207,32 @@ def xtransfer(inpt):
     # create PCNs using input parameters
     G, txns = createPCNsTxns(inpt)
     
-    succesfull_txns, success_volume = ILP(G, txns)
+    successfull_txns, success_volume = ILP(G, txns)
     
-    flows = greedy_hub_flows(G, successfull_txns)
+    hub_flows = greedy_hub_flows(G, successfull_txns)
     # alg from Patcas paper might be faster (check!)
     
     # add used links on graph (?)
     
     #write output 
     
-    return succesfull_txns, success_volume
+    return successfull_txns, success_volume, hub_flows
     
-def graph1():
-    x = 1
+def graph1(inputs, duration):
+    # plt.style.use('_mpl-gallery') 
+    
+    x = inputs
+    y = duration
+    
+    # plot
+    fig, ax = plt.subplots()
+    
+    ax.plot(x, y)
+    
+    # ax.set(xlim=(0, 8), xticks=np.arange(1, 8),
+    #        ylim=(0, 8), yticks=np.arange(1, 8))
+    
+    plt.show()
     
 def graph2():
     x = 1
@@ -175,13 +241,17 @@ def graph3():
     x = 1
 
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
-inputs = [(2,2,2)]
+inputs = [(3,3,2)]
+duration = []
 
 for tpl in inputs:
-    succesfull_txns, success_volume = xtransfer(tpl)
+    start = time.time()
+    succesfull_txns, success_volume, hub_flows = xtransfer(tpl)
+    end = time.time()
+    duration.append(end - start)
     
 # runtime
-graph1()
+# graph1(inputs, duration)
 
 # volume
 graph2()
