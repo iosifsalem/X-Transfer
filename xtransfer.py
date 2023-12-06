@@ -152,9 +152,6 @@ def greedy_hub_flows(G, successful_txns):
     # computes flows among hubs that realize the successful transactions
     
     # compute in/out-flows
-    hubs = [node for node in G.nodes if G.nodes[node]['label'] == 'hub']
-    clients = [node for node in G.nodes if G.nodes[node]['label'] == 'client']
-    
     flows = {node:0 for node in G.nodes if G.nodes[node]['label'] == 'hub'}
     
     for txn in successful_txns:
@@ -170,33 +167,35 @@ def greedy_hub_flows(G, successful_txns):
     hubs_with_inflow = []
     for hub in flows:
         if flows[hub] >= 0:
-            hubs_with_outflow.append([hub, flows[hub]])
+            hubs_with_outflow.append([flows[hub], hub])
         else:
-            hubs_with_inflow.append([hub, flows[hub]])            
+            hubs_with_inflow.append([flows[hub], hub])            
     
     # last element is the largest in absolute value 
-    hubs_with_inflow.sort(key=lambda x: x[1], reverse=True)
-    hubs_with_outflow.sort(key=lambda x: x[1])
-    
-    # print(hubs_with_inflow)
-    # print(hubs_with_outflow)
-    
+    hubs_with_inflow.sort(reverse=True)
+    hubs_with_outflow.sort()
+        
     # satisfy demands (add remainder to sorted list)
     while hubs_with_inflow:
-        (rcv_hub, demand) = hubs_with_inflow.pop()
+        (demand, rcv_hub) = hubs_with_inflow.pop()
         demand = abs(demand)
         
         while demand:
-            (send_hub, supply) = hubs_with_inflow.pop()
+            print(demand)
+            print(hubs_with_outflow)
+            (supply, send_hub) = hubs_with_outflow.pop()
             if supply >= demand:
                 demand = 0
                 supply -= demand
-                bisect.insort(hubs_with_outflow, [hub, supply], key=lambda x: x[1]) # fix
-                
+                bisect.insort(hubs_with_outflow, [supply, hub])
+                G.add_edge(send_hub, rcv_hub, flow=demand)
+                print(G.edges[(send_hub, rcv_hub)]['flow'])
             else:
                  demand -= supply   
-                 (send_hub, supply) = hubs_with_inflow.pop()
-
+                 supply, send_hub = hubs_with_outflow.pop()
+                 G.add_edge(send_hub, rcv_hub, flow=supply)
+                 print(G.edges[(send_hub, rcv_hub)]['flow'])
+    print(G.edges)
 
     return 0
 
