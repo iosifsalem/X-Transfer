@@ -174,6 +174,9 @@ def greedy_hub_flows(G, successful_txns):
     # last element is the largest in absolute value 
     hubs_with_inflow.sort(reverse=True)
     hubs_with_outflow.sort()
+    
+    print(f'in: {hubs_with_inflow}')
+    print(f'out: {hubs_with_outflow}')
         
     # satisfy demands (add remainder to sorted list)
     while hubs_with_inflow:
@@ -185,17 +188,21 @@ def greedy_hub_flows(G, successful_txns):
             print(hubs_with_outflow)
             (supply, send_hub) = hubs_with_outflow.pop()
             if supply >= demand:
+                G.add_edge(send_hub, rcv_hub, flow=demand)
+                
                 demand = 0
                 supply -= demand
                 bisect.insort(hubs_with_outflow, [supply, hub])
-                G.add_edge(send_hub, rcv_hub, flow=demand)
-                print(G.edges[(send_hub, rcv_hub)]['flow'])
+                print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")
             else:
-                 demand -= supply   
-                 supply, send_hub = hubs_with_outflow.pop()
-                 G.add_edge(send_hub, rcv_hub, flow=supply)
-                 print(G.edges[(send_hub, rcv_hub)]['flow'])
+                # check alg! probably insertion needed here too? 
+                G.add_edge(send_hub, rcv_hub, flow=supply)
+                print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")                
+                
+                demand -= supply   
     print(G.edges)
+
+    # connect connected components 
 
     return 0
 
