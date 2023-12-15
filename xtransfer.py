@@ -145,6 +145,7 @@ def ILP(G, txns):
     print(f'number of txns = {len(txns)}. successful txns = {len(successful_txns)}')
 
     success_volume = sum([txn.amount for txn in txns if x.X[txns.index(txn)]]) / sum([txn.amount for txn in txns])
+    success_volume = np.floor(success_volume*100)/100  # two decimal precision 
     print(f'success volume = {success_volume}')
     return successful_txns, success_volume
     
@@ -175,8 +176,8 @@ def greedy_hub_flows(G, successful_txns):
     hubs_with_inflow.sort(reverse=True)
     hubs_with_outflow.sort()
     
-    print(f'in: {hubs_with_inflow}')
-    print(f'out: {hubs_with_outflow}')
+    # print(f'in: {hubs_with_inflow}')
+    # print(f'out: {hubs_with_outflow}')
         
     # satisfy demands (add remainder to sorted list)
     while hubs_with_inflow:
@@ -184,26 +185,30 @@ def greedy_hub_flows(G, successful_txns):
         demand = abs(demand)
         
         while demand:
-            print(demand)
-            print(hubs_with_outflow)
+            # print(demand)
+            # print(hubs_with_outflow)
             (supply, send_hub) = hubs_with_outflow.pop()
             if supply >= demand:
-                G.add_edge(send_hub, rcv_hub, flow=demand)
-                
-                demand = 0
+                G.add_edge(send_hub, rcv_hub, flow=demand)                
                 supply -= demand
-                bisect.insort(hubs_with_outflow, [supply, hub])
+                demand = 0
+                bisect.insort(hubs_with_outflow, [supply, send_hub])
                 print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")
             else:
                 # check alg! probably insertion needed here too? 
                 G.add_edge(send_hub, rcv_hub, flow=supply)
                 print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")                
-                
                 demand -= supply   
-    print(G.edges)
 
     # connect connected components 
-
+    comps = [c for c in nx.strongly_connected_components(G)]
+    for c in comps:
+        print(c)
+    
+    pos = nx.spring_layout(G)
+    nx.draw(G, pos, node_size = 500, with_labels=True)
+    plt.show()
+    
     return 0
 
 def xtransfer(inpt):
@@ -215,10 +220,7 @@ def xtransfer(inpt):
     
     successfull_txns, success_volume = ILP(G, txns)
     
-    hub_flows = greedy_hub_flows(G, successfull_txns)
-    # alg from Patcas paper might be faster (check!)
-    
-    # add used links on graph (?)
+    hub_flows = greedy_hub_flows(G, successfull_txns)    
     
     #write output 
     
@@ -230,15 +232,15 @@ def graph1(inputs, duration):
     x = inputs
     y = duration
     
-    # plot
-    fig, ax = plt.subplots()
+    # # plot
+    # fig, ax = plt.subplots()
     
-    ax.plot(x, y)
+    # ax.plot(x, y)
     
-    # ax.set(xlim=(0, 8), xticks=np.arange(1, 8),
-    #        ylim=(0, 8), yticks=np.arange(1, 8))
+    # # ax.set(xlim=(0, 8), xticks=np.arange(1, 8),
+    # #        ylim=(0, 8), yticks=np.arange(1, 8))
     
-    plt.show()
+    # plt.show()
     
 def graph2():
     x = 1
@@ -247,7 +249,7 @@ def graph3():
     x = 1
 
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
-inputs = [(3,3,2)]
+inputs = [(4,2,2)]
 duration = []
 
 for tpl in inputs:
