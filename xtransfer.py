@@ -175,9 +175,6 @@ def greedy_hub_flows(G, successful_txns):
     # last element is the largest in absolute value 
     hubs_with_inflow.sort(reverse=True)
     hubs_with_outflow.sort()
-    
-    # print(f'in: {hubs_with_inflow}')
-    # print(f'out: {hubs_with_outflow}')
         
     # satisfy demands (add remainder to sorted list)
     while hubs_with_inflow:
@@ -185,8 +182,6 @@ def greedy_hub_flows(G, successful_txns):
         demand = abs(demand)
         
         while demand:
-            # print(demand)
-            # print(hubs_with_outflow)
             (supply, send_hub) = hubs_with_outflow.pop()
             if supply >= demand:
                 G.add_edge(send_hub, rcv_hub, flow=demand)                
@@ -201,15 +196,51 @@ def greedy_hub_flows(G, successful_txns):
                 demand -= supply   
 
     # connect connected components 
-    comps = [c for c in nx.strongly_connected_components(G)]
-    for c in comps:
+    # heuristic: for every hub_w with 0 flow
+    # remove an existing edge from hub_x to hub_y with flow f
+    # add the edges hub_x --> hub_w --> hub_y, both with flow f
+    initial_hub_to_hub_links = [[G.edges[(x,y)]['flow'], (x,y)] for (x,y) in G.edges if G.nodes[x]['label'] == 'hub' and G.nodes[y]['label'] == 'hub']
+    initial_hub_to_hub_links.sort(reverse=True)
+    print(initial_hub_to_hub_links)
+    for hub in flows:
+        if flows[hub] == 0:
+            hub_flow, (hub_from, hub_to) = initial_hub_to_hub_links.pop()
+            G.remove_edge(hub_from, hub_to)
+            G.add_edge(hub_from, hub, flow=hub_flow)
+            G.add_edge(hub, hub_to, flow=hub_flow)            
+
+    # heuristic, part2: connect non-zero-flow weakly connected components
+    components = [c for c in nx.weakly_connected_components(G)]
+    for c in components:
         print(c)
-    
+
+    # connect every component A with the next one B
+    for i in range(len(components)-1):
+        hubsA = [node for node in components[i] if 'hub' in node]
+        hubsB = [node for node in components[i+1] if 'hub' in node]
+        hub_links_A = [[G.edges[(x,y)]['flow'], (x,y)] for x in hubsA for y in hubsA if (x,y) in G.edges]
+        hub_links_B = [[G.edges[(x,y)]['flow'], (x,y)] for x in hubsB for y in hubsB if (x,y) in G.edges]
+        hub_links_A.sort(reverse=True)
+        hub_links_B.sort(reverse=True)        
+        print(f"hub_links_A: {hub_links_A} \nhub_links_B: {hub_links_B}")
+        
+        flowA, (s_A, d_A) = hub_links_A.pop()
+        flowB, (s_B, d_B) = hub_links_B.pop()
+        
+        max_flow, (s_max, d_max) = max((flowA, (s_A, d_A)), (flowB, (s_B, d_B)))
+        min_flow, (s_min, d_min) = min((flowA, (s_A, d_A)), (flowB, (s_B, d_B)))        
+        
+        G.remove_edge(s_min,d_min)
+        G.add_edge(s_min, s_max, flow=min_flow)
+        G.edges[(s_max,d_max)]['flow'] += min_flow
+        G.add_edge(d_max, d_min, flow=min_flow)
+        
+    # print graph (if small)
     pos = nx.spring_layout(G)
-    nx.draw(G, pos, node_size = 500, with_labels=True)
+    nx.draw(G, pos, node_size = 300, with_labels=True, node_shape='s')
     plt.show()
     
-    return 0
+    return [(G.edges[(x,y)]['flow'], (x,y)) for (x,y) in G.edges if G.nodes[x]['label'] == 'hub' and G.nodes[y]['label'] == 'hub']
 
 def xtransfer(inpt):
     # X-Transfer computational part
@@ -221,6 +252,8 @@ def xtransfer(inpt):
     successfull_txns, success_volume = ILP(G, txns)
     
     hub_flows = greedy_hub_flows(G, successfull_txns)    
+    for item in hub_flows:
+        print(item)
     
     #write output 
     
