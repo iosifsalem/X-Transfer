@@ -102,6 +102,7 @@ def ILP(G, txns):
         val, row, col, b = [], [], [], []
 
         # optimization: the following for loops can be parallelized if needed
+        # TODO: parallelize the following for loop 
         for client in clients:
             hub = hub_attached_to_client(client)
             client_index = clients.index(client)
@@ -161,7 +162,7 @@ def greedy_hub_flows(G, successful_txns):
         flows[sending_hub] += txn.amount
         flows[receiving_hub] -= txn.amount
 
-    print(flows)
+    # print(flows)
     
     # sort flows
     hubs_with_outflow = []
@@ -188,11 +189,11 @@ def greedy_hub_flows(G, successful_txns):
                 supply -= demand
                 demand = 0
                 bisect.insort(hubs_with_outflow, [supply, send_hub])
-                print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")
+                # print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")
             else:
                 # check alg! probably insertion needed here too? 
                 G.add_edge(send_hub, rcv_hub, flow=supply)
-                print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")                
+                # print(f"{G.edges[(send_hub, rcv_hub)]['flow']} from {send_hub} to {rcv_hub}")                
                 demand -= supply   
 
     # connect connected components 
@@ -201,7 +202,6 @@ def greedy_hub_flows(G, successful_txns):
     # add the edges hub_x --> hub_w --> hub_y, both with flow f
     initial_hub_to_hub_links = [[G.edges[(x,y)]['flow'], (x,y)] for (x,y) in G.edges if G.nodes[x]['label'] == 'hub' and G.nodes[y]['label'] == 'hub']
     initial_hub_to_hub_links.sort(reverse=True)
-    print(initial_hub_to_hub_links)
     for hub in flows:
         if flows[hub] == 0:
             hub_flow, (hub_from, hub_to) = initial_hub_to_hub_links.pop()
@@ -211,8 +211,6 @@ def greedy_hub_flows(G, successful_txns):
 
     # heuristic, part2: connect non-zero-flow weakly connected components
     components = [c for c in nx.weakly_connected_components(G)]
-    for c in components:
-        print(c)
 
     # connect every component A with the next one B
     for i in range(len(components)-1):
@@ -222,7 +220,6 @@ def greedy_hub_flows(G, successful_txns):
         hub_links_B = [[G.edges[(x,y)]['flow'], (x,y)] for x in hubsB for y in hubsB if (x,y) in G.edges]
         hub_links_A.sort(reverse=True)
         hub_links_B.sort(reverse=True)        
-        print(f"hub_links_A: {hub_links_A} \nhub_links_B: {hub_links_B}")
         
         flowA, (s_A, d_A) = hub_links_A.pop()
         flowB, (s_B, d_B) = hub_links_B.pop()
@@ -234,11 +231,11 @@ def greedy_hub_flows(G, successful_txns):
         G.add_edge(s_min, s_max, flow=min_flow)
         G.edges[(s_max,d_max)]['flow'] += min_flow
         G.add_edge(d_max, d_min, flow=min_flow)
-        
+    
     # print graph (if small)
-    pos = nx.spring_layout(G)
-    nx.draw(G, pos, node_size = 300, with_labels=True, node_shape='s')
-    plt.show()
+    # pos = nx.spring_layout(G)
+    # nx.draw(G, pos, node_size = 300, with_labels=True, node_shape='s')
+    # plt.show()
     
     return [(G.edges[(x,y)]['flow'], (x,y)) for (x,y) in G.edges if G.nodes[x]['label'] == 'hub' and G.nodes[y]['label'] == 'hub']
 
@@ -249,31 +246,34 @@ def xtransfer(inpt):
     # create PCNs using input parameters
     G, txns = createPCNsTxns(inpt)
     
+    # run ILP that computes the max (in volume) subset of feasible txns
     successfull_txns, success_volume = ILP(G, txns)
     
-    hub_flows = greedy_hub_flows(G, successfull_txns)    
-    for item in hub_flows:
-        print(item)
+    # compute hub-to-hub flows
+    hub_flows = greedy_hub_flows(G, successfull_txns) 
+    sum_hub_flows = sum([tpl[0] for tpl in hub_flows])
     
-    #write output 
+    # for item in hub_flows:
+    #     print(item)
     
-    return successfull_txns, success_volume, hub_flows
+    return success_volume, sum_hub_flows
     
-def graph1(inputs, duration):
+def graph1(capacity_utilization, runtime):
     # plt.style.use('_mpl-gallery') 
     
-    x = inputs
-    y = duration
-    
-    # # plot
-    # fig, ax = plt.subplots()
-    
-    # ax.plot(x, y)
-    
-    # # ax.set(xlim=(0, 8), xticks=np.arange(1, 8),
-    # #        ylim=(0, 8), yticks=np.arange(1, 8))
-    
-    # plt.show()
+    plt.plot(capacity_utilization, runtime, color='grey', linestyle='dashed', linewidth = 3, 
+         marker='o', markerfacecolor='black', markersize=12) 
+      
+    # naming the x axis 
+    plt.xlabel('(sum of txn amounts)/client-to-hub capacity') 
+    # naming the y axis 
+    plt.ylabel('runtime (s)') 
+      
+    # giving a title to my graph 
+    plt.title('X-Transfer runtime ()') 
+      
+    # function to show the plot 
+    plt.show()
     
 def graph2():
     x = 1
@@ -281,18 +281,38 @@ def graph2():
 def graph3():
     x = 1
 
+
+# specify input parameters for generating all inputs 
+nhubs = 5
+nClientsPerPCN = 10
+capacity_utilization = (0.5, 1, 2, 4, 8)
+repetitions = 10
+
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
-inputs = [(4,2,2)]
-duration = []
+inputs = [(nhubs, nClientsPerPCN, util) for util in capacity_utilization]
+outputs = {str(key):{'runtime':0, 'success_volume':0, 'sum_hub_flows':0} for key in capacity_utilization}
 
 for tpl in inputs:
-    start = time.time()
-    succesfull_txns, success_volume, hub_flows = xtransfer(tpl)
-    end = time.time()
-    duration.append(end - start)
+    key = str(tpl[2])
+    
+    # repeat each experiment {repetitions} number of times and take the average 
+    for rep in range(repetitions):
+        start = time.time()
+        success_volume, sum_hub_flows = xtransfer(tpl)
+        end = time.time()
+    
+        # record output
+        outputs[key]['runtime'] += end - start
+        outputs[key]['success_volume'] += success_volume
+        outputs[key]['sum_hub_flows'] += sum_hub_flows
+    
+    # take average over number of repetitions
+    outputs[key]['runtime'] /= repetitions
+    outputs[key]['success_volume'] /= repetitions
+    outputs[key]['sum_hub_flows'] /= repetitions
     
 # runtime
-# graph1(inputs, duration)
+graph1([tpl[2] for tpl in inputs], [outputs[key]['runtime'] for key in outputs])
 
 # volume
 graph2()
