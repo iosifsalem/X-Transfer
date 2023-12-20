@@ -29,9 +29,7 @@ def hub_attached_to_client(client_name):
 def client_capacity_gen():
     return 10
         
-def createPCNsTxns(inpt):
-    nPCNs, nClientsPerPCN, txn_percentage = inpt
-    
+def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):    
     # create a graph that includes the links within all PCNs
     # we assume that all hubs can communicate with all other hubs
     # we will add the hub to hub links later, when we compute which ones are used
@@ -239,12 +237,11 @@ def greedy_hub_flows(G, successful_txns):
     
     return [(G.edges[(x,y)]['flow'], (x,y)) for (x,y) in G.edges if G.nodes[x]['label'] == 'hub' and G.nodes[y]['label'] == 'hub']
 
-def xtransfer(inpt):
+def xtransfer(nPCNs, nClientsPerPCN, txn_percentage):
     # X-Transfer computational part
-    nPCNs, nClientsPerPCN, txn_percentage = inpt
     
     # create PCNs using input parameters
-    G, txns = createPCNsTxns(inpt)
+    G, txns = createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage)
     
     # run ILP that computes the max (in volume) subset of feasible txns
     successfull_txns, success_volume = ILP(G, txns)
@@ -258,64 +255,57 @@ def xtransfer(inpt):
     
     return success_volume, sum_hub_flows
     
-def graph1(capacity_utilization, runtime):
-    # plt.style.use('_mpl-gallery') 
-    
-    plt.plot(capacity_utilization, runtime, color='grey', linestyle='dashed', linewidth = 3, 
+def graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot_file_extension):
+    # plot runtime with increasing client-to-hub capacity utilization
+    plt.cla()  #clear
+    y = [outputs[util][case] for util in capacity_utilization]
+    plt.plot(capacity_utilization, y, color='grey', linestyle='dashed', linewidth = 3, 
          marker='o', markerfacecolor='black', markersize=12) 
       
     # naming the x axis 
     plt.xlabel('(sum of txn amounts)/client-to-hub capacity') 
     # naming the y axis 
-    plt.ylabel('runtime (s)') 
+    plt.ylabel(case) 
       
-    # giving a title to my graph 
-    plt.title('X-Transfer runtime ()') 
+    plt.title(f'X-Transfer: {case}') 
       
+    plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case}{plot_file_extension}')
     # function to show the plot 
     plt.show()
-    
-def graph2():
-    x = 1
-    
-def graph3():
-    x = 1
 
 
 # specify input parameters for generating all inputs 
 nhubs = 5
 nClientsPerPCN = 10
+# capacity_utilization is the ratio of sum of all transactions from a client 
+# over the total client-to-hub channel capacity
+# the ratio is the same for all clients and channels 
 capacity_utilization = (0.5, 1, 2, 4, 8)
 repetitions = 10
+plot_file_extension = '.pdf'
 
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
 inputs = [(nhubs, nClientsPerPCN, util) for util in capacity_utilization]
-outputs = {str(key):{'runtime':0, 'success_volume':0, 'sum_hub_flows':0} for key in capacity_utilization}
+outputs = {key:{'runtime (s)':0, 'success volume':0, 'sum of hub flows':0} for key in capacity_utilization}
 
-for tpl in inputs:
-    key = str(tpl[2])
-    
+for util in capacity_utilization:    
     # repeat each experiment {repetitions} number of times and take the average 
     for rep in range(repetitions):
+        # X-transfer
         start = time.time()
-        success_volume, sum_hub_flows = xtransfer(tpl)
+        success_volume, sum_hub_flows = xtransfer(nhubs, nClientsPerPCN, util)
         end = time.time()
     
         # record output
-        outputs[key]['runtime'] += end - start
-        outputs[key]['success_volume'] += success_volume
-        outputs[key]['sum_hub_flows'] += sum_hub_flows
+        outputs[util]['runtime (s)'] += end - start
+        outputs[util]['success volume'] += success_volume
+        outputs[util]['sum of hub flows'] += sum_hub_flows
     
     # take average over number of repetitions
-    outputs[key]['runtime'] /= repetitions
-    outputs[key]['success_volume'] /= repetitions
-    outputs[key]['sum_hub_flows'] /= repetitions
-    
-# runtime
-graph1([tpl[2] for tpl in inputs], [outputs[key]['runtime'] for key in outputs])
+    outputs[util]['runtime (s)'] /= repetitions
+    outputs[util]['success volume'] /= repetitions
+    outputs[util]['sum of hub flows'] /= repetitions
 
-# volume
-graph2()
-
-# sum of flows through hubs
-graph3()
+# create plots
+for case in ('runtime (s)', 'success volume', 'sum of hub flows'):
+    graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot_file_extension)
