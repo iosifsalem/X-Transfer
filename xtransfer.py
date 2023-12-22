@@ -27,8 +27,10 @@ def hub_attached_to_client(client_name):
     return f"hub{client_name.split('client')[0][3:]}"
 
 # TODO: fix capacity assignment
-def client_capacity_gen():
-    return 100
+def client_capacity_gen(array_length):
+    # return an array of size array_length of randomly selected channel capacities 
+    # from a Bitcoin Lightning Network snapshot (TODO: add snapshot date)  
+    return np.random.randint(50, high=100, size=array_length)
         
 def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):    
     # create a graph that includes the links within all PCNs
@@ -37,11 +39,15 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):
     G = nx.DiGraph()
     G.add_nodes_from([hub_name(i) for i in range(nPCNs)], label='hub')
     
+    # client-hub/hub-clients channel capacity generation
+    array_length = 2*nPCNs*nClientsPerPCN
+    channel_capacities = list(client_capacity_gen(array_length))
+    
     for pcn_id in range(nPCNs):
         G.add_nodes_from([client_name(pcn_id,i) for i in range(nClientsPerPCN)], label='client')
         hub = hub_name(pcn_id)
-        G.add_edges_from([(hub, client_name(pcn_id, i)) for i in range(nClientsPerPCN)], capacity=client_capacity_gen())
-        G.add_edges_from([(client_name(pcn_id, i), hub) for i in range(nClientsPerPCN)], capacity=client_capacity_gen())
+        G.add_edges_from([(hub, client_name(pcn_id, i)) for i in range(nClientsPerPCN)], capacity=channel_capacities.pop())
+        G.add_edges_from([(client_name(pcn_id, i), hub) for i in range(nClientsPerPCN)], capacity=channel_capacities.pop())
 
     # create transactions
     clients = [x for x in G.nodes if G.nodes[x]['label'] == 'client']
@@ -325,7 +331,7 @@ nClientsPerPCN = 10
 # the ratio is the same for all clients and channels 
 capacity_utilization = (0.5, 1, 2, 4, 8)
 repetitions = 10  #number of times to compute each data point. Then take average.
-plot_file_extension = '.jpg'
+plot_file_extension = '.pdf'
 
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
 inputs = [(nhubs, nClientsPerPCN, util) for util in capacity_utilization]
