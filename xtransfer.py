@@ -10,6 +10,7 @@ import bisect
 import time
 import concurrent.futures
 import matplotlib.pyplot as plt
+import json
 
 class Txn:
     def __init__(self, src, dst, amount):
@@ -30,7 +31,7 @@ def hub_attached_to_client(client_name):
 def client_capacity_gen(array_length):
     # return an array of size array_length of randomly selected channel capacities 
     # from a Bitcoin Lightning Network snapshot (TODO: add snapshot date)  
-    return np.random.randint(50, high=100, size=array_length)
+    return list(np.random.randint(50, high=100, size=array_length))
         
 def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):    
     # create a graph that includes the links within all PCNs
@@ -40,8 +41,7 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):
     G.add_nodes_from([hub_name(i) for i in range(nPCNs)], label='hub')
     
     # client-hub/hub-clients channel capacity generation
-    array_length = 2*nPCNs*nClientsPerPCN
-    channel_capacities = list(client_capacity_gen(array_length))
+    channel_capacities = client_capacity_gen(2*nPCNs*nClientsPerPCN)
     
     for pcn_id in range(nPCNs):
         G.add_nodes_from([client_name(pcn_id,i) for i in range(nClientsPerPCN)], label='client')
@@ -325,7 +325,7 @@ def graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot
 
 # specify input parameters for generating all inputs 
 nhubs = 5
-nClientsPerPCN = 10
+nClientsPerPCN = 1000
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
@@ -367,6 +367,10 @@ for util in capacity_utilization:
     for alg in ['X-Transfer', 'no aggregation']:
         outputs[alg][util]['success volume'] /= repetitions
         outputs[alg][util]['sum of hub flows'] /= repetitions
+
+# save output
+with open(f'outputH{nhubs}C{nClientsPerPCN}.json', 'w') as handle:
+    json.dump(outputs, handle)
 
 # create plots
 for case in ('runtime (s)', 'success volume', 'sum of hub flows'):
