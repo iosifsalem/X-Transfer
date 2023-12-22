@@ -8,6 +8,7 @@ from gurobipy import GRB
 import scipy.sparse as sp
 import bisect 
 import time
+import concurrent.futures
 import matplotlib.pyplot as plt
 
 class Txn:
@@ -27,7 +28,7 @@ def hub_attached_to_client(client_name):
 
 # TODO: fix capacity assignment
 def client_capacity_gen():
-    return 10
+    return 100
         
 def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):    
     # create a graph that includes the links within all PCNs
@@ -97,30 +98,41 @@ def ILP(G, txns):
         
         # val[i] is the value of A in position (row[i], col[i])
         # the bound for row of A (i-th constraint) i is b[i] 
-        val, row, col, b = [], [], [], []
 
-        # optimization: the following for loops can be parallelized if needed
-        # TODO: parallelize the following for loop 
-        for client in clients:
-            hub = hub_attached_to_client(client)
-            client_index = clients.index(client)
-            for txn in txn_dict[client]['from']:
-                val.append(txn.amount)
-                row.append(client_index)
-                col.append(txns.index(txn))
+        # for loop definition of var, row, col, b
+        # val, row, col, b = [], [], [], []
+        
+        # for client in clients:
+        #     hub = hub_attached_to_client(client)
+        #     client_index = clients.index(client)
+        #     for txn in txn_dict[client]['from']:
+        #         val.append(txn.amount)
+        #         row.append(client_index)
+        #         col.append(txns.index(txn))
             
-            for txn in txn_dict[client]['to']:
-                val.append(-txn.amount)
-                row.append(client_index)
-                col.append(txns.index(txn))            
+        #     for txn in txn_dict[client]['to']:
+        #         val.append(-txn.amount)
+        #         row.append(client_index)
+        #         col.append(txns.index(txn))            
             
-            b.append(G.edges[(client, hub)]['capacity'])
+        #     b.append(G.edges[(client, hub)]['capacity'])
+
+        # list comprehension 
+        val = [txn.amount for client in clients for txn in txn_dict[client]['from']]        
+        row = [clients.index(client) for client in clients for txn in txn_dict[client]['from']]
+        col = [txns.index(txn) for client in clients for txn in txn_dict[client]['from']]
+
+        val += [-txn.amount for client in clients for txn in txn_dict[client]['to']]        
+        row += [clients.index(client) for client in clients for txn in txn_dict[client]['to']]
+        col += [txns.index(txn) for client in clients for txn in txn_dict[client]['to']]
+        
+        b = [G.edges[(client, hub_attached_to_client(client))]['capacity'] for client in clients]
 
         # convert lists to np.array
         val = np.array(val)
         row = np.array(row)
         col = np.array(col)
-        b = np.array(b)        
+        b = np.array(b)                
 
         # define A as a sparse matrix
         A = sp.csr_matrix((val, (row, col)), shape=(len(clients), len(txns)))
@@ -131,9 +143,9 @@ def ILP(G, txns):
         # Optimize model
         m.optimize()
     
-        print(x.X)
-        print(f"Obj: {m.ObjVal:g}")
-    
+        # print(x.X)
+        # print(f"Obj: {m.ObjVal:g}")
+        
     except gp.GurobiError as e:
         print(f"Error code {e.errno}: {e}")
     
@@ -291,6 +303,7 @@ def graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot
         z = [outputs['no aggregation'][util][case] for util in capacity_utilization]
         plt.plot(capacity_utilization, z, color='grey', linestyle='dashed', linewidth = 3, 
          marker='o', markerfacecolor='black', markersize=12) 
+        plt.legend(['X-Transfer', 'no aggregation'])
       
     # naming the x axis 
     plt.xlabel('(sum of txn amounts)/client-to-hub capacity') 
@@ -298,7 +311,8 @@ def graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot
     plt.ylabel(case) 
       
     plt.title(f'X-Transfer: {case}') 
-      
+  
+    
     plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case}{plot_file_extension}')
     # function to show the plot 
     plt.show()
@@ -310,19 +324,19 @@ nClientsPerPCN = 10
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
 capacity_utilization = (0.5, 1, 2, 4, 8)
-repetitions = 10
-plot_file_extension = '.pdf'
+repetitions = 10  #number of times to compute each data point. Then take average.
+plot_file_extension = '.jpg'
 
 # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
 inputs = [(nhubs, nClientsPerPCN, util) for util in capacity_utilization]
 outputs = {alg:{util:{'runtime (s)':0, 'success volume':0, 'sum of hub flows':0} for util in capacity_utilization} for alg in {'X-Transfer', 'no aggregation'}}
 
+# run X-transfer and no aggregation algs over the input data and save results to output 
 for util in capacity_utilization:    
     # repeat each experiment {repetitions} number of times and take the average 
     for rep in range(repetitions):
         # create PCNs using input parameters
         G, txns = createPCNsTxns(nhubs, nClientsPerPCN, util)
-        initial_capacities = [((x,y), G.edges[(x,y)]['capacity']) for (x,y) in G.edges if 'capacity' in G.edges[(x,y)]]
 
         # X-transfer
         start = time.time()
@@ -335,13 +349,12 @@ for util in capacity_utilization:
         outputs['X-Transfer'][util]['sum of hub flows'] += X_transfer_sum_hub_flows
         
         # no aggregation
-        # reset channel capacities (hub-to-hub links are ignored by the no aggregation alg)
-        for item in initial_capacities:
-            G.edges[item[0]]['capacity'] = item[1]
-
+        # X-Transfer computed the max feasible txns, but didn't apply them to the network (only added hub-to-hub links and their flows)
+        # no aggregation ignores hub to hub links (assumes sufficient capacity) and applies all txns
+        # thus no need to rest the client to hub channel capacities, as their initial values are intact
         no_agg_success_volume, no_agg_sum_hub_flows = no_aggregation(G, txns)
-        outputs['no aggregation'][util]['success volume'] += X_transfer_success_volume
-        outputs['no aggregation'][util]['sum of hub flows'] += X_transfer_sum_hub_flows
+        outputs['no aggregation'][util]['success volume'] += no_agg_success_volume
+        outputs['no aggregation'][util]['sum of hub flows'] += no_agg_sum_hub_flows
     
     # take average over number of repetitions
     outputs['X-Transfer'][util]['runtime (s)'] /= repetitions  #runtime only relevant for X-Transfer 
