@@ -75,15 +75,16 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):
                     txn_amount = random.randint(1,amount_left)
                     amount_left -= txn_amount
                     txns.append(Txn(client, dst, txn_amount))      
-    elif '#txns':                
+                    
+    elif x_axis_legend == '#txns':                
         # txns between 5-4000 euro (12,637SATS - 10.11M SATS in Dec 2023)
         # we split in three parts low/med/high and take txns from channels that have low/med/high capacities
         client_to_hub_capacities = [(G.edges[(x,y)]['capacity'], (x,y)) for (x,y) in G.edges if G.nodes[x]['label']=='client']
         client_to_hub_capacities.sort()
         cap_length = len(client_to_hub_capacities)
-        low_capacity_channels = client_to_hub_capacities[:int(cap_length/3)]
-        med_capacity_channels = client_to_hub_capacities[int(cap_length/3):int(2*cap_length/3)]
-        high_capacity_channels = client_to_hub_capacities[int(2*cap_length/3):]
+        low_capacity_channels = client_to_hub_capacities[:int(cap_length/2)]
+        med_capacity_channels = client_to_hub_capacities[int(cap_length/2):int(3*cap_length/4)]
+        high_capacity_channels = client_to_hub_capacities[int(3*cap_length/4):]
         
         lower_limit = 12_637  #satoshi
         upper_limit = 10_110_000  #satoshi 
@@ -91,22 +92,24 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):
         destination = lambda source : random.choice([node for node in clients if node != source])
         
         # low cost txns
-        for i in range(int(x/3)):
+        for i in range(x):
             src = low_capacity_channels[i%len(low_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
-            amount = random.randint(lower_limit, int((upper_limit-lower_limit)/3))
+            amount = random.randint(lower_limit, min(int((upper_limit-lower_limit)/3), G.edges[(src, hub_attached_to_client(src))]['capacity']))
             txns.append(Txn(src, destination(src), amount))
             
-        # med cost txns
-        for i in range(int(x/3), int(2*x/3)):
-            src = med_capacity_channels[i%len(med_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
-            amount = random.randint(int((upper_limit-lower_limit)/3), int(2*(upper_limit-lower_limit)/3))
-            txns.append(Txn(src, destination(src), amount))
+        # # med cost txns
+        # for i in range(int(x/2), int(3*x/4)):
+        #     src = med_capacity_channels[i%len(med_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
+        #     amount = random.randint(int((upper_limit-lower_limit)/3), min(int(2*(upper_limit-lower_limit)/3), G.edges[(src, hub_attached_to_client(src))]['capacity']))
+        #     txns.append(Txn(src, destination(src), amount))
 
-        # high cost txns
-        for i in range(int(2*x/3), x+1):
-            src = high_capacity_channels[i%len(high_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
-            amount = random.randint(int(2*(upper_limit-lower_limit)/3), upper_limit)
-            txns.append(Txn(src, destination(src), amount))    
+        # # high cost txns
+        # for i in range(int(3*x/4), x):
+        #     src = high_capacity_channels[i%len(high_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
+        #     amount = random.randint(int(2*(upper_limit-lower_limit)/3), min(upper_limit, G.edges[(src, hub_attached_to_client(src))]['capacity']))
+        #     txns.append(Txn(src, destination(src), amount))    
+    
+        print(f'#txns = {len(txns)}')
     
     return G, txns
 
@@ -342,7 +345,7 @@ def graph_maker(x_axis, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plo
 
     if case in {'success volume ratio', 'sum of hub flows'}:
         z = [outputs['no aggregation'][x][case] for x in x_axis]
-        plt.plot(capacity_utilization, z, color='grey', linestyle='dashed', linewidth = 3, 
+        plt.plot(x_axis, z, color='grey', linestyle='dashed', linewidth = 3, 
          marker='o', markerfacecolor='black', markersize=12) 
         plt.legend(['X-Transfer', 'no aggregation'])
      
@@ -394,20 +397,20 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend):
         for alg in ['X-Transfer', 'no aggregation']:
             outputs[alg][x]['success volume ratio'] /= repetitions
             outputs[alg][x]['sum of hub flows'] /= repetitions
+
+    # save output
+    with open(f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}).json', 'w') as handle:
+        json.dump(outputs, handle)  
     
     # create plots
     for case in ('runtime (s)', 'success volume ratio', 'sum of hub flows'):
         graph_maker(x_cases, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plot_file_extension)    
-        
-    # save output
-    with open(f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}).json', 'w') as handle:
-        json.dump(outputs, handle)        
 
 # specify input parameters for generating all inputs 
 nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
 nClientsPerPCN = 10
-nTxns = (100, 150, 200)
+nTxns = (100, 200, 400, 600, 800, 1000) 
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
