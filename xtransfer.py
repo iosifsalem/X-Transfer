@@ -8,9 +8,10 @@ from gurobipy import GRB
 import scipy.sparse as sp
 import bisect 
 import time
-import concurrent.futures
 import matplotlib.pyplot as plt
 import json
+import pandas as pd
+
 
 class Txn:
     def __init__(self, src, dst, amount):
@@ -27,13 +28,15 @@ def client_name(pcn_id, client_id):
 def hub_attached_to_client(client_name):
     return f"hub{client_name.split('client')[0][3:]}"
 
-# TODO: fix capacity assignment
 def client_capacity_gen(array_length):
     # return an array of size array_length of randomly selected channel capacities 
-    # from a Bitcoin Lightning Network snapshot (TODO: add snapshot date)  
-    return list(np.random.randint(50, high=100, size=array_length))
+    # from a Bitcoin Lightning Network snapshot (August 2023)  
+    LN_channels = pd.read_csv("channels.csv")
+    capacities = LN_channels.satoshis.values.tolist()  #satoshis is the dataframe column that gives the channnel capacity 
+    return random.sample(capacities, array_length)
+    # return list(np.random.randint(100, high=10000, size=array_length))
         
-def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):    
+def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):    
     # create a graph that includes the links within all PCNs
     # we assume that all hubs can communicate with all other hubs
     # we will add the hub to hub links later, when we compute which ones are used
@@ -50,12 +53,12 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):
         G.add_edges_from([(client_name(pcn_id, i), hub) for i in range(nClientsPerPCN)], capacity=channel_capacities.pop())
 
     # create transactions
+    # for each client, sum of txn amounts from that client = capacity*txn_percentage 
     clients = [x for x in G.nodes if G.nodes[x]['label'] == 'client']
-    
-    txns = []
-    
+        
     # unit test
     # txns = [Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity']*0.5), Txn(client_name(0,0), client_name(1,0), G.edges[(client_name(0,0), 'hub0')]['capacity'])]    
+    txns = []
     
     for pcn_id in range(nPCNs):
         hub = hub_name(pcn_id)
@@ -63,7 +66,7 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):
             client = client_name(pcn_id, client_id)
             
             # create random set of transactions summing up to capacity*txn_percentage
-            amount_left = np.floor(txn_percentage * G.edges[(client, hub)]['capacity'])
+            amount_left = np.floor(x * G.edges[(client, hub)]['capacity'])
             while amount_left != 0:
                 # select recepient
                 dst = random.choice([node for node in clients if node != client])
@@ -71,7 +74,20 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, txn_percentage):
                 # select amount
                 txn_amount = random.randint(1,amount_left)
                 amount_left -= txn_amount
-                txns.append(Txn(client, dst, txn_amount))           
+                txns.append(Txn(client, dst, txn_amount))      
+                
+    # # nTxns txns in total, all clients have outgoing or incoming txns, random generation
+    # client_to_hub_capacities = [(G.edges[(x,y)]['capacity'], (x,y)) for (x,y) in G.edges if G.nodes[x]['label']=='client']
+    # client_to_hub_capacities.sort()
+    # cap_length = len(client_to_hub_capacities)
+    # low_capacity = client_to_hub_capacities[:int(cap_length/3)]
+    # med_capacity = client_to_hub_capacities[int(cap_length/3):int(2*cap_length/3)]
+    # high_capacity = client_to_hub_capacities[int(2*cap_length/3):]
+    
+    # sources = random.choices(clients, k=nTxns)
+    # # add 10k txns from high cap, 20k for med_capt, and 20K
+    # txns += [Txn(sources[i][0], random.choice([clt for clt in clients if clt != sources[i]]), random.randint(int(G.edges['capacity']/3), b)) for i in range(nTxns)]
+        
     
     return G, txns
 
@@ -163,7 +179,7 @@ def ILP(G, txns):
 
     success_volume = sum([txn.amount for txn in txns if x.X[txns.index(txn)]]) / sum([txn.amount for txn in txns])
     success_volume = np.floor(success_volume*100)/100  # two decimal precision 
-    print(f'success volume = {success_volume}')
+    print(f'success volume ratio = {success_volume}')
     return successful_txns, success_volume
     
 def greedy_hub_flows(G, successful_txns):
@@ -298,80 +314,91 @@ def no_aggregation(G, txns):
             
     return successful_txns_vol/total_vol, sum_hub_flows
 
-def graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot_file_extension):
+def graph_maker(x_axis, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plot_file_extension):
     # plot runtime with increasing client-to-hub capacity utilization
     plt.cla()  #clear
-    y = [outputs['X-Transfer'][util][case] for util in capacity_utilization]
-    plt.plot(capacity_utilization, y, color='lightblue', linewidth = 3, 
+    y = [outputs['X-Transfer'][x][case] for x in x_axis]
+    plt.plot(x_axis, y, color='lightblue', linewidth = 3, 
          marker='o', markerfacecolor='blue', markersize=12) 
 
-    if case in {'success volume', 'sum of hub flows'}:
-        z = [outputs['no aggregation'][util][case] for util in capacity_utilization]
+    if case in {'success volume ratio', 'sum of hub flows'}:
+        z = [outputs['no aggregation'][x][case] for x in x_axis]
         plt.plot(capacity_utilization, z, color='grey', linestyle='dashed', linewidth = 3, 
          marker='o', markerfacecolor='black', markersize=12) 
         plt.legend(['X-Transfer', 'no aggregation'])
-      
-    # naming the x axis 
-    plt.xlabel('(sum of txn amounts)/client-to-hub capacity') 
-    # naming the y axis 
+     
+    plt.xlabel(x_axis_legend) 
     plt.ylabel(case) 
-      
-    plt.title(f'X-Transfer: {case}') 
-  
-    
-    plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case}{plot_file_extension}')
-    # function to show the plot 
+    plt.title(f'X-Transfer: {case}')     
+
+    plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case} ({x_axis_legend.replace("/",":")}){plot_file_extension}')
     plt.show()
+
+def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend):
+    # x_cases is either the capacity utilization values or the #txns values 
+    
+    # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
+    # inputs = [(nhubs, nClientsPerPCN, x) for x in x_cases]
+
+    outputs = {alg:{x:{'runtime (s)':0, 'success volume ratio':0, 'sum of hub flows':0} for x in x_cases} for alg in {'X-Transfer', 'no aggregation'}}
+    
+    # run X-transfer and no aggregation algs over the input data and save results to output 
+    for x in x_cases:    
+        # repeat each experiment {repetitions} number of times and take the average 
+        for _ in range(repetitions):
+            # create PCNs using input parameters
+            G, txns = createPCNsTxns(nhubs, nClientsPerPCN, x, x_axis_legend)
+            
+            outputs['#txns'] = len(txns)
+            outputs['txn (min, avg, max)'] = (min([txn.amount for txn in txns]), np.mean([txn.amount for txn in txns]), max([txn.amount for txn in txns]))
+    
+            # X-transfer
+            start = time.time()
+            X_transfer_success_volume, X_transfer_sum_hub_flows = xtransfer(G, txns)
+            end = time.time()
+        
+            # record X-transfer output
+            outputs['X-Transfer'][x]['runtime (s)'] += end - start
+            outputs['X-Transfer'][x]['success volume ratio'] += X_transfer_success_volume
+            outputs['X-Transfer'][x]['sum of hub flows'] += X_transfer_sum_hub_flows
+            
+            # no aggregation
+            # X-Transfer computed the max feasible txns, but didn't apply them to the network (only added hub-to-hub links and their flows)
+            # no aggregation ignores hub to hub links (assumes sufficient capacity) and applies all txns
+            # thus no need to rest the client to hub channel capacities, as their initial values are intact
+            no_agg_success_volume, no_agg_sum_hub_flows = no_aggregation(G, txns)
+            outputs['no aggregation'][x]['success volume ratio'] += no_agg_success_volume
+            outputs['no aggregation'][x]['sum of hub flows'] += no_agg_sum_hub_flows
+        
+        # take average over number of repetitions
+        outputs['X-Transfer'][x]['runtime (s)'] /= repetitions  #runtime only relevant for X-Transfer 
+        for alg in ['X-Transfer', 'no aggregation']:
+            outputs[alg][x]['success volume ratio'] /= repetitions
+            outputs[alg][x]['sum of hub flows'] /= repetitions
+    
+    # create plots
+    for case in ('runtime (s)', 'success volume ratio', 'sum of hub flows'):
+        graph_maker(x_cases, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plot_file_extension)    
+        
+    # save output
+    with open(f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}).json', 'w') as handle:
+        json.dump(outputs, handle)        
 
 # specify input parameters for generating all inputs 
 nhubs = 5
-nClientsPerPCN = 1000
+# nClientsPerPCN = int(input("Insert #clients per PCN: "))
+nClientsPerPCN = 10
+nTxns = (50_000)
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
 capacity_utilization = (0.5, 1, 2, 4, 8)
+# nTxns = (100, 500, 1000)
 repetitions = 10  #number of times to compute each data point. Then take average.
 plot_file_extension = '.pdf'
 
-# input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
-inputs = [(nhubs, nClientsPerPCN, util) for util in capacity_utilization]
-outputs = {alg:{util:{'runtime (s)':0, 'success volume':0, 'sum of hub flows':0} for util in capacity_utilization} for alg in {'X-Transfer', 'no aggregation'}}
+x_axis_legend = '(sum of txn amounts)/client-to-hub capacity'
+run_scenario(nhubs, nClientsPerPCN, capacity_utilization, x_axis_legend)
 
-# run X-transfer and no aggregation algs over the input data and save results to output 
-for util in capacity_utilization:    
-    # repeat each experiment {repetitions} number of times and take the average 
-    for rep in range(repetitions):
-        # create PCNs using input parameters
-        G, txns = createPCNsTxns(nhubs, nClientsPerPCN, util)
-
-        # X-transfer
-        start = time.time()
-        X_transfer_success_volume, X_transfer_sum_hub_flows = xtransfer(G, txns)
-        end = time.time()
-    
-        # record X-transfer output
-        outputs['X-Transfer'][util]['runtime (s)'] += end - start
-        outputs['X-Transfer'][util]['success volume'] += X_transfer_success_volume
-        outputs['X-Transfer'][util]['sum of hub flows'] += X_transfer_sum_hub_flows
-        
-        # no aggregation
-        # X-Transfer computed the max feasible txns, but didn't apply them to the network (only added hub-to-hub links and their flows)
-        # no aggregation ignores hub to hub links (assumes sufficient capacity) and applies all txns
-        # thus no need to rest the client to hub channel capacities, as their initial values are intact
-        no_agg_success_volume, no_agg_sum_hub_flows = no_aggregation(G, txns)
-        outputs['no aggregation'][util]['success volume'] += no_agg_success_volume
-        outputs['no aggregation'][util]['sum of hub flows'] += no_agg_sum_hub_flows
-    
-    # take average over number of repetitions
-    outputs['X-Transfer'][util]['runtime (s)'] /= repetitions  #runtime only relevant for X-Transfer 
-    for alg in ['X-Transfer', 'no aggregation']:
-        outputs[alg][util]['success volume'] /= repetitions
-        outputs[alg][util]['sum of hub flows'] /= repetitions
-
-# save output
-with open(f'outputH{nhubs}C{nClientsPerPCN}.json', 'w') as handle:
-    json.dump(outputs, handle)
-
-# create plots
-for case in ('runtime (s)', 'success volume', 'sum of hub flows'):
-    graph_maker(capacity_utilization, outputs, case, nhubs, nClientsPerPCN, plot_file_extension)
+# x_axis_legend = '#txns'
+# run_scenario(nhubs, nClientsPerPCN, nTxns, x_axis_legend)
