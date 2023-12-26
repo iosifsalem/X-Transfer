@@ -319,7 +319,7 @@ def no_aggregation(G, txns):
             
     return successful_txns_vol/total_vol, sum_hub_flows
 
-def graph_maker(x_axis, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plot_file_extension):
+def graph_maker(x_axis, x_axis_legend, outputs, case, x_cases, nhubs, nClientsPerPCN, plot_file_extension):
     # plot runtime with increasing client-to-hub capacity utilization
     plt.cla()  #clear
     y = [outputs['X-Transfer'][x][case] for x in x_axis]
@@ -336,10 +336,10 @@ def graph_maker(x_axis, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plo
     plt.ylabel(case) 
     plt.title(f'X-Transfer: {case}')     
 
-    plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case} ({x_axis_legend.replace("/",":")}){plot_file_extension}')
+    plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}){plot_file_extension}')
     plt.show()
 
-def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend):
+def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
     # x_cases is either the capacity utilization values or the #txns values 
     
     # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
@@ -348,11 +348,15 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend):
     outputs = {alg:{x:{'runtime (s)':0, 'success volume ratio':0, 'sum of hub flows':0} for x in x_cases} for alg in {'X-Transfer', 'no aggregation'}}
     
     # run X-transfer and no aggregation algs over the input data and save results to output 
+    txn_stats = {x:[0]*x for x in x_cases}  #dict for plotting the txn amount distribution 
     for x in x_cases:    
         # repeat each experiment {repetitions} number of times and take the average 
         for _ in range(repetitions):
             # create PCNs using input parameters
             G, txns = createPCNsTxns(nhubs, nClientsPerPCN, x, x_axis_legend)
+            txn_list = [(txns[i].amount, i) for i in range(x)]
+            txn_list.sort()
+            txn_stats[x] = [txn_stats[x][i] + txn_list[i][0]/repetitions for i in range(x)]
             
             outputs['#txns'] = len(txns)
             outputs['txn (min, avg, max)'] = (min([txn.amount for txn in txns]), np.mean([txn.amount for txn in txns]), max([txn.amount for txn in txns]))
@@ -380,20 +384,31 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend):
         for alg in ['X-Transfer', 'no aggregation']:
             outputs[alg][x]['success volume ratio'] /= repetitions
             outputs[alg][x]['sum of hub flows'] /= repetitions
+        
+        # print txn distribution for the last x_case
+        if x == x_cases[-1]:
+            plt.cla()  #clear              
+            plt.plot(range(x), txn_stats[x], color='darkgreen', linewidth = 2, 
+             marker='o', markerfacecolor='green', markersize=5) 
+            plt.xlabel('txn ranking by amount (lowest first)') 
+            plt.ylabel('txn amount') 
+            plt.title(f'txn distribution (avg over {repetitions} runs)')     
+            plt.savefig(f'outputs/txn-distr-H{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}){plot_file_extension}')
+            plt.show()
 
     # save output
-    with open(f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}).json', 'w') as handle:
+    with open(f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}).json', 'w') as handle:
         json.dump(outputs, handle)  
     
     # create plots
     for case in ('runtime (s)', 'success volume ratio', 'sum of hub flows'):
-        graph_maker(x_cases, x_axis_legend, outputs, case, nhubs, nClientsPerPCN, plot_file_extension)    
+        graph_maker(x_cases, x_axis_legend, outputs, case, x_cases, nhubs, nClientsPerPCN, plot_file_extension)    
 
 # specify input parameters for generating all inputs 
 nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
 nClientsPerPCN = 100
-nTxns = (1000, 2000, 3000) 
+nTxns = (100, 200, 300) 
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
@@ -403,7 +418,7 @@ repetitions = 10  #number of times to compute each data point. Then take average
 plot_file_extension = '.pdf'
 
 # x_axis_legend = '(sum of txn amounts)/client-to-hub capacity'
-# run_scenario(nhubs, nClientsPerPCN, capacity_utilization, x_axis_legend)
+# run_scenario(nhubs, nClientsPerPCN, capacity_utilization, x_axis_legend, repetitions)
 
 x_axis_legend = '#txns'
-run_scenario(nhubs, nClientsPerPCN, nTxns, x_axis_legend)
+run_scenario(nhubs, nClientsPerPCN, nTxns, x_axis_legend, repetitions)
