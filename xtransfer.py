@@ -78,39 +78,22 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):
                     
     elif x_axis_legend == '#txns':                
         # txns between 5-4000 euro (12,637SATS - 10.11M SATS in Dec 2023)
-        # we split in three parts low/med/high and take txns from channels that have low/med/high capacities
-        client_to_hub_capacities = [(G.edges[(x,y)]['capacity'], (x,y)) for (x,y) in G.edges if G.nodes[x]['label']=='client']
-        client_to_hub_capacities.sort()
-        cap_length = len(client_to_hub_capacities)
-        low_capacity_channels = client_to_hub_capacities[:int(cap_length/2)]
-        med_capacity_channels = client_to_hub_capacities[int(cap_length/2):int(3*cap_length/4)]
-        high_capacity_channels = client_to_hub_capacities[int(3*cap_length/4):]
+        # todo (?): split in small/medium/high txn amounts (maybe according to local capacity) 
         
         lower_limit = 12_637  #satoshi
         upper_limit = 10_110_000  #satoshi 
         
         destination = lambda source : random.choice([node for node in clients if node != source])
-        
-        # low cost txns
-        for i in range(x):
-            src = low_capacity_channels[i%len(low_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
-            amount = random.randint(lower_limit, min(int((upper_limit-lower_limit)/3), G.edges[(src, hub_attached_to_client(src))]['capacity']))
-            txns.append(Txn(src, destination(src), amount))
-            
-        # # med cost txns
-        # for i in range(int(x/2), int(3*x/4)):
-        #     src = med_capacity_channels[i%len(med_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
-        #     amount = random.randint(int((upper_limit-lower_limit)/3), min(int(2*(upper_limit-lower_limit)/3), G.edges[(src, hub_attached_to_client(src))]['capacity']))
-        #     txns.append(Txn(src, destination(src), amount))
 
-        # # high cost txns
-        # for i in range(int(3*x/4), x):
-        #     src = high_capacity_channels[i%len(high_capacity_channels)][1][0]  #extract source x from (capacity (x,y))
-        #     amount = random.randint(int(2*(upper_limit-lower_limit)/3), min(upper_limit, G.edges[(src, hub_attached_to_client(src))]['capacity']))
-        #     txns.append(Txn(src, destination(src), amount))    
-    
-        print(f'#txns = {len(txns)}')
-    
+        for i in range(x):
+            src = clients[i%(len(clients))]
+            capacity = G.edges[(src, hub_attached_to_client(src))]['capacity']
+            if lower_limit < capacity:
+                amount = random.randint(lower_limit, min(capacity, upper_limit))
+            else:
+                amount = random.randint(1000, capacity)
+            txns.append(Txn(src, destination(src), amount))
+                
     return G, txns
 
 def ILP(G, txns):
@@ -409,8 +392,8 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend):
 # specify input parameters for generating all inputs 
 nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
-nClientsPerPCN = 10
-nTxns = (100, 200, 400, 600, 800, 1000) 
+nClientsPerPCN = 100
+nTxns = (1000, 2000, 3000) 
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
