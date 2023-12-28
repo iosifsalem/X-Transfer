@@ -323,15 +323,25 @@ def no_aggregation(G, txns):
 def graph_maker(x_axis, x_axis_legend, outputs, case, x_cases, nhubs, nClientsPerPCN, plot_file_extension):
     # plot runtime with increasing client-to-hub capacity utilization
     plt.cla()  #clear
-    y = [outputs['X-Transfer'][x][case] for x in x_axis]
-    plt.plot(x_axis, y, color='lightblue', linewidth = 3, 
-         marker='o', markerfacecolor='blue', markersize=12) 
 
     if case in {'success volume ratio', 'sum of hub flows'}:
+        y = [outputs['X-Transfer'][x][case] for x in x_axis]
+        plt.plot(x_axis, y, color='lightblue', linewidth = 3, 
+             marker='o', markerfacecolor='blue', markersize=12) 
+
         z = [outputs['no aggregation'][x][case] for x in x_axis]
         plt.plot(x_axis, z, color='grey', linestyle='dashed', linewidth = 3, 
          marker='o', markerfacecolor='black', markersize=12) 
         plt.legend(['X-Transfer', 'no aggregation'])
+    elif case == 'runtime (s)':
+        y = [outputs['X-Transfer'][x]['mean runtime'] for x in x_axis]
+        plt.plot(x_axis, y, color='lightblue', linewidth = 3, 
+             marker='o', markerfacecolor='blue', markersize=12) 
+
+        z = [outputs['X-Transfer'][x]['median runtime'] for x in x_axis]
+        plt.plot(x_axis, z, color='lightgreen', linestyle='dashed', linewidth = 3, 
+         marker='o', markerfacecolor='green', markersize=12) 
+        plt.legend(['mean', 'median'])
      
     plt.xlabel(x_axis_legend) 
     plt.ylabel(case) 
@@ -346,7 +356,7 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
     # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
     # inputs = [(nhubs, nClientsPerPCN, x) for x in x_cases]
 
-    outputs = {alg:{x:{'runtime (s)':0, 'success volume ratio':0, 'sum of hub flows':0} for x in x_cases} for alg in {'X-Transfer', 'no aggregation'}}
+    outputs = {alg:{x:{'runtime (s)':[], 'success volume ratio':0, 'sum of hub flows':0} for x in x_cases} for alg in {'X-Transfer', 'no aggregation'}}
     
     # run X-transfer and no aggregation algs over the input data and save results to output 
     txn_stats = {x:[0]*x for x in x_cases}  #dict for plotting the txn amount distribution 
@@ -368,7 +378,7 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
             end = time.time()
         
             # record X-transfer output
-            outputs['X-Transfer'][x]['runtime (s)'] += end - start
+            outputs['X-Transfer'][x]['runtime (s)'].append(end - start)
             outputs['X-Transfer'][x]['success volume ratio'] += X_transfer_success_volume
             outputs['X-Transfer'][x]['sum of hub flows'] += X_transfer_sum_hub_flows
             
@@ -380,8 +390,11 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
             outputs['no aggregation'][x]['success volume ratio'] += no_agg_success_volume
             outputs['no aggregation'][x]['sum of hub flows'] += no_agg_sum_hub_flows
         
+        #runtime only relevant for X-Transfer
+        outputs['X-Transfer'][x]['mean runtime'] = np.mean(outputs['X-Transfer'][x]['runtime (s)'])
+        outputs['X-Transfer'][x]['median runtime'] = np.median(outputs['X-Transfer'][x]['runtime (s)'])        
+
         # take average over number of repetitions
-        outputs['X-Transfer'][x]['runtime (s)'] /= repetitions  #runtime only relevant for X-Transfer 
         for alg in ['X-Transfer', 'no aggregation']:
             outputs[alg][x]['success volume ratio'] /= repetitions
             outputs[alg][x]['sum of hub flows'] /= repetitions
@@ -411,6 +424,7 @@ nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
 nClientsPerPCN = 100
 nTxns = (2000, 4000, 6000, 8000, 10000) 
+# nTxns = (100, 200, 300)  # for debugging
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
