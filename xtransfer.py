@@ -81,7 +81,7 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):
         # todo (?): split in small/medium/high txn amounts (maybe according to local capacity) 
         
         lower_limit = 12_637  #satoshi
-        upper_limit = 10_110_000  #satoshi 
+        upper_limit = 500_000  #satoshi 
         
         destination = lambda source : random.choice([node for node in clients if node != source])
 
@@ -110,6 +110,7 @@ def ILP(G, txns):
     try:
         # Create a new model
         m = gp.Model("transaction-selection")
+        # m.Params.timelimit = 600  #set time limit (s)
     
         # Create variables: binary for including a transaction or not
         x = m.addMVar(shape=len(txns), vtype=GRB.BINARY, name="x")
@@ -404,19 +405,20 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
     for case in ('runtime (s)', 'success volume ratio', 'sum of hub flows'):
         graph_maker(x_cases, x_axis_legend, outputs, case, x_cases, nhubs, nClientsPerPCN, plot_file_extension)    
 
+## input parameters
 # specify input parameters for generating all inputs 
 nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
 nClientsPerPCN = 100
-nTxns = (100, 200, 300) 
+nTxns = (2000, 4000, 6000, 8000, 10000) 
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
 capacity_utilization = (0.5, 1, 2, 4, 8)
-# nTxns = (100, 500, 1000)
 repetitions = 10  #number of times to compute each data point. Then take average.
 plot_file_extension = '.pdf'
 
+## scenarios 
 # x_axis_legend = '(sum of txn amounts)/client-to-hub capacity'
 # run_scenario(nhubs, nClientsPerPCN, capacity_utilization, x_axis_legend, repetitions)
 
