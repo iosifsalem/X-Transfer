@@ -35,7 +35,7 @@ def client_capacity_gen(array_length):
     return random.sample(capacities, array_length)
     # return list(np.random.randint(100, high=10000, size=array_length))
         
-def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):    
+def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend, target_nTxns):    
     # create a graph that includes the links within all PCNs
     # we assume that all hubs can communicate with all other hubs
     # we will add the hub to hub links later, when we compute which ones are used
@@ -60,27 +60,27 @@ def createPCNsTxns(nPCNs, nClientsPerPCN, x, x_axis_legend):
     txns = []
 
     if x_axis_legend == '(sum of txn amounts)/client-to-hub capacity':    
-        for pcn_id in range(nPCNs):
-            hub = hub_name(pcn_id)
-            for client_id in range(nClientsPerPCN):
-                client = client_name(pcn_id, client_id)
-                
+        for client in clients:
+            for _ in range(int(target_nTxns/len(clients))):
                 # create random set of transactions summing up to capacity*txn_percentage
-                amount_left = np.floor(x * G.edges[(client, hub)]['capacity'])
-                while amount_left != 0:
-                    # select recepient
-                    dst = random.choice([node for node in clients if node != client])
+                amount_left = int(x * G.edges[(client, hub_attached_to_client(client))]['capacity'])
+                # select recepient
+                dst = random.choice([node for node in clients if node != client])
                     
-                    # select amount
+                # select amount
+                if _ < int(target_nTxns/len(clients)) - 1:                    
                     txn_amount = random.randint(1,amount_left)
-                    amount_left -= txn_amount
-                    txns.append(Txn(client, dst, txn_amount))      
+                else:
+                    txn_amount = amount_left
                     
+                amount_left -= txn_amount
+                txns.append(Txn(client, dst, txn_amount))                      
+                
     elif x_axis_legend == '#txns':                
         # txns between 5-4000 euro (12,637SATS - 10.11M SATS in Dec 2023)
         # todo (?): split in small/medium/high txn amounts (maybe according to local capacity) 
         
-        lower_limit = 12_637  #satoshi
+        lower_limit = 10_000  #satoshi
         upper_limit = 500_000  #satoshi 
         
         destination = lambda source : random.choice([node for node in clients if node != source])
@@ -345,32 +345,39 @@ def graph_maker(x_axis, x_axis_legend, outputs, case, x_cases, nhubs, nClientsPe
      
     plt.xlabel(x_axis_legend) 
     plt.ylabel(case) 
-    plt.title(f'X-Transfer: {case}')     
+    plt.title(f'X-Transfer: {case}')    
+    plt.grid()
+    plt.tight_layout()
 
     plt.savefig(f'outputs/H{nhubs}C{nClientsPerPCN}-{case} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}){plot_file_extension}')
     plt.show()
 
-def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
+def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions, target_nTxns):
     # x_cases is either the capacity utilization values or the #txns values 
     
-    # input tuples in the form (#hubs or PCNs, #clients per hub, #txns/capacity percentage)
-    # inputs = [(nhubs, nClientsPerPCN, x) for x in x_cases]
-
     outputs = {alg:{x:{'runtime (s)':[], 'success volume ratio':0, 'sum of hub flows':0} for x in x_cases} for alg in {'X-Transfer', 'no aggregation'}}
     
+    #dict for plotting the txn amount distribution
+    if x_axis_legend == '(sum of txn amounts)/client-to-hub capacity':
+        txn_stats = {x:[0]*target_nTxns for x in x_cases}
+    elif x_axis_legend == '#txns':
+        txn_stats = {x:[0]*x for x in x_cases}   
+
     # run X-transfer and no aggregation algs over the input data and save results to output 
-    txn_stats = {x:[0]*x for x in x_cases}  #dict for plotting the txn amount distribution 
     for x in x_cases:    
         # repeat each experiment {repetitions} number of times and take the average 
         for _ in range(repetitions):
             # create PCNs using input parameters
-            G, txns = createPCNsTxns(nhubs, nClientsPerPCN, x, x_axis_legend)
-            txn_list = [(txns[i].amount, i) for i in range(x)]
-            txn_list.sort()
-            txn_stats[x] = [txn_stats[x][i] + txn_list[i][0]/repetitions for i in range(x)]
+            G, txns = createPCNsTxns(nhubs, nClientsPerPCN, x, x_axis_legend, target_nTxns)
             
-            outputs['#txns'] = len(txns)
-            outputs['txn (min, avg, max)'] = (min([txn.amount for txn in txns]), np.mean([txn.amount for txn in txns]), max([txn.amount for txn in txns]))
+            # txn amounts statistics 
+            if x_axis_legend == '(sum of txn amounts)/client-to-hub capacity':
+                list_size = target_nTxns
+            elif x_axis_legend == '#txns':
+                list_size = x
+            txn_list = [(txns[i].amount, i) for i in range(list_size)]
+            txn_list.sort()
+            txn_stats[x] = [txn_stats[x][i] + txn_list[i][0]/repetitions for i in range(list_size)]
     
             # X-transfer
             start = time.time()
@@ -401,18 +408,34 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
         
         # print txn distribution for the last x_case
         if x == x_cases[-1]:
-            plt.cla()  #clear              
-            plt.plot(range(x), txn_stats[x], color='darkgreen', linewidth = 2, 
-             marker='o', markerfacecolor='green', markersize=5) 
+            txn_amounts = [txn.amount for txn in txns]            
+            outputs[f'{x} txns stats'] = {'min':min(txn_amounts), 'median':np.median(txn_amounts), 'mean':np.mean(txn_amounts), 'max':max(txn_amounts)}
+
+            plt.cla()  #clear 
+            plt.plot(range(list_size), txn_stats[x], color='darkgreen', linewidth = 2, 
+              marker='o', markerfacecolor='green', markersize=5) 
             plt.xlabel('txn ranking by amount (lowest first)') 
             plt.ylabel('txn amount') 
             plt.title(f'txn distribution (avg over {repetitions} runs)')     
+            plt.grid()
+            plt.tight_layout()
             plt.savefig(f'outputs/txn-distr-H{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}){plot_file_extension}')
             plt.show()
+            
+            # save to output dict 
+            outputs[f'{x} txn list, sorted and averaged ({repetitions} reps)'] = txn_stats[x]
 
     # save output
-    with open(f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}).json', 'w') as handle:
+    filename = f'outputs/outputH{nhubs}C{nClientsPerPCN} ({x_axis_legend.replace("/",":")}, {min(x_cases)}-{max(x_cases)}).json'
+    with open(filename, 'w') as handle:
         json.dump(outputs, handle)  
+
+    ## uncomment for creating plots without rerunning the algs 
+    # with open(filename, 'r') as handle:
+    #     outputs = json.load(handle)
+    
+    # for key in {'X-Transfer', 'no aggregation'}:
+    #     outputs[key] = {int(subkey):outputs[key][subkey] for subkey in outputs[key]}
     
     # create plots
     for case in ('runtime (s)', 'success volume ratio', 'sum of hub flows'):
@@ -423,18 +446,25 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions):
 nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
 nClientsPerPCN = 100
+
+# scenario with increasing #txns
 nTxns = (2000, 4000, 6000, 8000, 10000) 
 # nTxns = (100, 200, 300)  # for debugging
+
+# scenario with increasing capacity utilization: 
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
-capacity_utilization = (0.5, 1, 2, 4, 8)
+# capacity_utilization = (0.5, 1, 2, 4, 8)
+capacity_utilization = (0.5, 1, 2, 4)  # for debugging
+target_nTxns = 4000
+
 repetitions = 10  #number of times to compute each data point. Then take average.
 plot_file_extension = '.pdf'
 
 ## scenarios 
-# x_axis_legend = '(sum of txn amounts)/client-to-hub capacity'
-# run_scenario(nhubs, nClientsPerPCN, capacity_utilization, x_axis_legend, repetitions)
+x_axis_legend = '(sum of txn amounts)/client-to-hub capacity'
+run_scenario(nhubs, nClientsPerPCN, capacity_utilization, x_axis_legend, repetitions, target_nTxns)
 
-x_axis_legend = '#txns'
-run_scenario(nhubs, nClientsPerPCN, nTxns, x_axis_legend, repetitions)
+# x_axis_legend = '#txns'
+# run_scenario(nhubs, nClientsPerPCN, nTxns, x_axis_legend, repetitions)
