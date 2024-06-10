@@ -1,4 +1,4 @@
-# implementation of xTransfer, crossPCN protocol
+# implementation of xTransfer, a privacy-preserving cross-PCN transaction aggregation protocol
 
 import numpy as np
 import networkx as nx
@@ -445,7 +445,7 @@ def run_scenario(nhubs, nClientsPerPCN, x_cases, x_axis_legend, repetitions, tar
 # specify input parameters for generating all inputs 
 nhubs = 5
 # nClientsPerPCN = int(input("Insert #clients per PCN: "))
-nClientsPerPCN = 100
+nClientsPerPCN = 1000
 
 # scenario with increasing #txns
 nTxns = (2000, 4000, 6000, 8000, 10000) 
@@ -455,9 +455,8 @@ nTxns = (2000, 4000, 6000, 8000, 10000)
 # capacity_utilization is the ratio of sum of all transactions from a client 
 # over the total client-to-hub channel capacity
 # the ratio is the same for all clients and channels 
-# capacity_utilization = (0.5, 1, 2, 4, 8)
-capacity_utilization = (0.5, 1, 2, 4)  # for debugging
-target_nTxns = 4000
+capacity_utilization = (0.5, 1, 2, 4)
+target_nTxns = 10*nClientsPerPCN
 
 repetitions = 10  #number of times to compute each data point. Then take average.
 plot_file_extension = '.pdf'
