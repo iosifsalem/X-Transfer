@@ -212,6 +212,7 @@ def greedy_hub_flows(G, successful_txns):
             hubs_with_inflow.append([flows[hub], hub])            
     
     # last element is the largest in absolute value 
+    # inflow hubs: first element largest in abs val, outflow hubs: last element largest in abs val
     hubs_with_inflow.sort(reverse=True)
     hubs_with_outflow.sort()
         
